@@ -1,0 +1,230 @@
+// Custom admin menu commands.
+// For more information:
+//
+// http://wiki.alliedmods.net/Custom_Admin_Menu_%28SourceMod%29
+//
+// Note: This file must be in Valve KeyValues format (no multiline comments)
+//
+
+"Commands"
+{
+	"Class Restrictions"
+	{
+		"Restrict to class"
+		{
+			"cmd"		"sm_cr_restrict #1 #2"
+			"admin"		"sm_kick"
+			"execute"	"player"
+			"1"
+			{
+				"type"		"groupplayer"
+				"method"	"name"
+				"title"		"Target player/team"
+			}
+			"2"
+			{
+				"type"		"list"
+				"title"		"Class"
+				"1"		"scout,soldier,pyro,demoman,heavy,engineer,medic,sniper,spy"
+				"1."		"All"
+				"2"		"scout"
+				"2."		"Scout"
+				"3"		"soldier"
+				"3."		"Soldier"
+				"4"		"pyro"
+				"4."		"Pyro"
+				"5"		"demoman"
+				"5."		"Demoman"
+				"6"		"heavy"
+				"6."		"Heavy"
+				"7"		"engineer"
+				"7."		"Engineer"
+				"8"		"medic"
+				"8."		"Medic"
+				"9"		"sniper"
+				"9."		"Sniper"
+				"10"		"spy"
+				"10."		"Spy"
+			}
+		}
+		"Allow class"
+		{
+			"cmd"		"sm_cr_allow #1 #2"
+			"admin"		"sm_kick"
+			"execute"	"player"
+			"1"
+			{
+				"type"		"groupplayer"
+				"method"	"name"
+				"title"		"Target player/team"
+			}
+			"2"
+			{
+				"type"		"list"
+				"title"		"Class"
+				"1"		"scout,soldier,pyro,demoman,heavy,engineer,medic,sniper,spy"
+				"1."		"All"
+				"2"		"scout"
+				"2."		"Scout"
+				"3"		"soldier"
+				"3."		"Soldier"
+				"4"		"pyro"
+				"4."		"Pyro"
+				"5"		"demoman"
+				"5."		"Demoman"
+				"6"		"heavy"
+				"6."		"Heavy"
+				"7"		"engineer"
+				"7."		"Engineer"
+				"8"		"medic"
+				"8."		"Medic"
+				"9"		"sniper"
+				"9."		"Sniper"
+				"10"		"spy"
+				"10."		"Spy"
+			}
+		}
+		"Deny class"
+		{
+			"cmd"		"sm_cr_deny #1 #2"
+			"admin"		"sm_kick"
+			"execute"	"player"
+			"1"
+			{
+				"type"		"groupplayer"
+				"method"	"name"
+				"title"		"Target player/team"
+			}
+			"2"
+			{
+				"type"		"list"
+				"title"		"Class"
+				"1"		"scout,soldier,pyro,demoman,heavy,engineer,medic,sniper,spy"
+				"1."		"All"
+				"2"		"scout"
+				"2."		"Scout"
+				"3"		"soldier"
+				"3."		"Soldier"
+				"4"		"pyro"
+				"4."		"Pyro"
+				"5"		"demoman"
+				"5."		"Demoman"
+				"6"		"heavy"
+				"6."		"Heavy"
+				"7"		"engineer"
+				"7."		"Engineer"
+				"8"		"medic"
+				"8."		"Medic"
+				"9"		"sniper"
+				"9."		"Sniper"
+				"10"		"spy"
+				"10."		"Spy"
+			}
+		}
+	}
+	"Team Restrictions"
+	{
+		"Restrict to team"
+		{
+			"cmd"		"sm_tr_restrict #1 #2"
+			"admin"		"sm_kick"
+			"execute"	"player"
+			"1"
+			{
+				"type"		"groupplayer"
+				"method"	"name"
+				"title"		"Target player/team"
+			}
+			"2"
+			{
+				"type"		"list"
+				"title"		"Team"
+				"1"		"all"
+				"1."		"All"
+				"2"		"spectator"
+				"2."		"Spectator"
+				"3"		"red"
+				"3."		"RED"
+				"4"		"blu"
+				"4."		"BLU"
+			}
+		}
+		"Allow team"
+		{
+			"cmd"		"sm_tr_allow #1 #2"
+			"admin"		"sm_kick"
+			"execute"	"player"
+			"1"
+			{
+				"type"		"groupplayer"
+				"method"	"name"
+				"title"		"Target player/team"
+			}
+			"2"
+			{
+				"type"		"list"
+				"title"		"Team"
+				"1"		"all"
+				"1."		"All"
+				"2"		"spectator"
+				"2."		"Spectator"
+				"3"		"red"
+				"3."		"RED"
+				"4"		"blu"
+				"4."		"BLU"
+			}
+		}
+		"Deny team"
+		{
+			"cmd"		"sm_tr_deny #1 #2"
+			"admin"		"sm_kick"
+			"execute"	"player"
+			"1"
+			{
+				"type"		"groupplayer"
+				"method"	"name"
+				"title"		"Target player/team"
+			}
+			"2"
+			{
+				"type"		"list"
+				"title"		"Team"
+				"1"		"all"
+				"1."		"All"
+				"2"		"spectator"
+				"2."		"Spectator"
+				"3"		"red"
+				"3."		"RED"
+				"4"		"blu"
+				"4."		"BLU"
+			}
+		}
+	}
+	"Anti-RUP War"
+	{
+		"Block ready toggle"
+		{
+			"cmd"		"sm_arw_block #1"
+			"admin"		"sm_kick"
+			"execute"	"player"
+			"1"
+			{
+				"type"		"groupplayer"
+				"method"	"name"
+				"title"		"Target player/team"
+			}
+		}
+		"Unblock ready toggle"
+		{
+			"cmd"		"sm_arw_unblock #1"
+			"admin"		"sm_kick"
+			"execute"	"player"
+			"1"
+			{
+				"type"		"groupplayer"
+				"method"	"name"
+				"title"		"Target player/team"
+			}
+		}
+	}
+}
