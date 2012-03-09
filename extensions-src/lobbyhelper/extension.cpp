@@ -41,7 +41,7 @@ using namespace std;
 
 typedef std::map<int,steamid> sids_map;
 
-boost::thread *thr, *thr_upd;
+boost::thread *thr, *thr_upd = NULL;
 boost::mutex mtx_todo, mtx_sids, mtx_state;
 boost::condition_variable todo_updated;
 
@@ -101,6 +101,12 @@ bool LobbyHelper_Extension::SDK_OnLoad(char *error, size_t maxlength, bool late)
 void LobbyHelper_Extension::SDK_OnUnload()
 {
 	char path[PLATFORM_MAX_PATH];
+
+	if(thr_upd)
+	{
+		thr_upd->join();
+		delete thr_upd;
+	}
 
 	g_pSM->BuildPath(Path_SM, path, sizeof(path), "configs/lobbyhelper/lobbyidcache.txt");
 	ofstream ofs(path, ios::trunc);
@@ -320,11 +326,9 @@ vector<steamid> json_get_participating_sids(int lobbyid)
 
 	vector<steamid> res;
 
-	g_pSM->LogMessage(myself,"Using API JSON: %s",api_buffer);
 	if(!reader.parse(api_buffer,api_buffer+api_ptr, root))
 		throw runtime_error("Could not parse TF2Lobby API JSON.");
 
-	g_pSM->LogMessage(myself,"Parsed API JSON, our lobby is %d",lobbyid);
 	const Json::Value lobbies = root["lobbies"];
 	for(Json::Value::ArrayIndex i = 0; i < lobbies.size(); i++)
 	{
@@ -334,11 +338,8 @@ vector<steamid> json_get_participating_sids(int lobbyid)
 		istringstream iss(tlob["lobbyId"].asString());
 		iss >> tlid;
 
-		g_pSM->LogMessage(myself,"Considering lobby %d",tlid);
-
 		if(tlid == lobbyid)
 		{
-			g_pSM->LogMessage(myself,"Lobby found, our lobby is %d",tlid);
 			const Json::Value inlob = tlob["inLobby"];
 			for(Json::Value::ArrayIndex j = 0; j < inlob.size(); j++)
 			{
@@ -346,16 +347,12 @@ vector<steamid> json_get_participating_sids(int lobbyid)
 				istringstream iss2(inlob[j].asString());
 				iss2 >> uid;
 
-				g_pSM->LogMessage(myself,"Considering user %d",uid);
-
 				{
 					boost::lock_guard<boost::mutex> lock(mtx_sids);
 			
 					sids_map::const_iterator i = sids.find(uid);
 					if(i != sids.end())
 						res.push_back(i->second);
-					else
-						g_pSM->LogMessage(myself,"This user is not in the database. :(");
 				}
 			}
 			break;
@@ -479,6 +476,12 @@ static cell_t stop_indexing_steamids(IPluginContext *pCtx, const cell_t *params)
 static cell_t update_index(IPluginContext *pCtx, const cell_t *params)
 {
 	try{
+		if(thr_upd)
+		{
+			if(!thr_upd->timed_join(boost::posix_time::milliseconds(0)))
+				return 1;
+			delete thr_upd;
+		}
 		thr_upd = new boost::thread(boost::function<void()>(&upd_thread));
 	}
 	catch(runtime_error& e)
