@@ -84,7 +84,7 @@ else
 	INCLUDE += -I. -I.. -Isdk -I$(SMSDK)/public -I$(SMSDK)/public/sourcepawn
 endif
 
-LINK += -m32 -ldl -lm -ljson_linux-gcc-4.4.5_libmt -lboost_thread -lcurl 
+LINK += -m32 -ldl -lm -ljson_linux-gcc-4.4.5_libmt -lboost_thread -lcurl
 
 CFLAGS += -D_LINUX -Dstricmp=strcasecmp -D_stricmp=strcasecmp -D_strnicmp=strncasecmp -Dstrnicmp=strncasecmp \
 	-D_snprintf=snprintf -D_vsnprintf=vsnprintf -D_alloca=alloca -Dstrcmpi=strcasecmp -Wall -Werror -mfpmath=sse \

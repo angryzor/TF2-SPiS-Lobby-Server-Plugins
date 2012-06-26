@@ -1,0 +1,152 @@
+IMPORTANT NOTE:
+=================
+
+Because Steam's packaging system doesn't save symbolic links correctly, libcurl.so.4
+in TF2's main folder is a text file containing the text libcurl.4.2.0 instead
+of a symbolic link (as it should be).
+
+This causes binding to libcurl to fail unless you start your server with
+the supplied srcds_run_custom. This modified shellscript deletes
+the libcurl.so.4 file after updating (updates reinstate it) and replaces it with a
+proper symbolic link.
+
+
+
+Quick overview
+================
+
+Anti-RUP war:
+---------------
+This allows a lobby host to prevent disruptive people from changing the ready state
+of mp_tournament.
+
+CVs:
+	- sm_arw_version : version
+
+CCs:
+	- !arw_block <target> : block player(s)
+	- !arw_unblock <target>: unblock player(s)
+
+Team restrictions:
+--------------------
+Fix people to a certain team. The restrictions flip around automatically when teams
+are swapped automatically.
+
+CVs:
+	- sm_tr_version : version
+	- sm_tr_delay_team_switch : if 1, team switch is delayed until the player dies
+	- sm_tr_voting_enable : if 1, team restrict voting is enabled
+	- sm_tr_voting_treshold : percentage of people that have to agree in a vote
+
+CCs:
+	- !tr_restrict <target> <team> : restrict a player to a team
+	- !tr_allow <target> <team> : allow a player access to a team
+	- !tr_deny <target> <team> : deny a player access to a team
+	- !tr_voterestrict <target> <team> : vote to restrict a player to a team
+	- !tr_voteallow <target> <team> : vote to allow a player access to a team
+	- !tr_votedeny <target> <team> : vote to deny a player access to a team
+
+Class restrictions:
+---------------------
+Fix people to a certain class.
+
+CVs:
+	- sm_cr_version : version
+	- sm_cr_delay_class_switch : if 1, class switch is delayed until the player dies
+	- sm_cr_voting_enable : if 1, class restrict voting is enabled
+	- sm_cr_voting_treshold : percentage of people that have to agree in a vote
+
+CCs:
+	- !cr_restrict <target> <class> : restrict a player to a class
+	- !cr_allow <target> <class> : allow a player access to a class
+	- !cr_deny <target> <class> : deny a player access to a class
+	- !cr_voterestrict <target> <class> : vote to restrict a player to a class
+	- !cr_voteallow <target> <class> : vote to allow a player access to a class
+	- !cr_votedeny <target> <class> : vote to deny a player access to a class
+
+Status for lobby:
+-------------------
+Sets a fixed status message so servers with replay or sourcetv enabled can also host
+TF2Lobby lobbies. This message is only set when the server is empty. Note that I
+haven't found a method to get the version numbers so those may be incorrect in the
+status message when the server is empty.
+
+LobbyHelper:
+--------------
+Communicates with TF2Lobby to list players that are not in the lobby.
+Also has a team balance component, which uses the players' TF2Lobby stats to ask them to switch.
+
+CVs:
+	- sm_lh_version : version
+	- sm_lh_notify_report_delay : Delay after last connection before a notice is displayed to report
+	- sm_lh_update_index_delay : How many seconds to wait between syncs with TF2Lobby
+	- sm_lh_enable_teambalance : Enable or disable utomatic team balancing
+	- sm_lh_num_players_to_balance : Max number of players to ask to switch
+	- sm_lh_avg_kad_imba_treshold : Minimum average KA/D difference between teams to start balancing
+	- sm_lh_num_players_in_to_balance : Number of players that have to be in the game to start balancing
+
+CCs:
+	- !lh_shownotice : manually force to show the notice
+	- !lh_deactivate : stop reminding people to report (must be executed on tournament start)
+	- !lh_activate : restart reminding people to report (must be executed on tournament end)
+	- !lh_teambalance : check team balance
+
+SeeAll:
+---------
+Lists everyone's classes in chat.
+
+CVs:
+	- sm_sa_version : version
+
+CCs:
+	- !sa_see : dump players classes in chat
+
+APAX:
+-------
+APAX (Asynchronous Pawn And XML) is not a plugin but a sourcemod library. It is meant to be a simple variant of the XMLHttpRequest request used in AJAX.
+It exposes 2 simple functions: APAX_Query and APAX_CheckResponses.
+
+To make a web request, simply call APAX_Query like so:
+
+	APAX_Query(url,httpMethod,requestBody,contentTypeOfRequest,funcOnComplete,userData);
+
+for instance
+
+	APAX_Query("http://www.google.com/",APAX_METHOD_GET,"","",OnGoogleResponse,0);
+
+	public OnGoogleResponse(responseCode, String:responseBody, userData)
+	{
+		if(responseCode == 200)
+			LogMessage("Received response from google: %s",responseBody);
+		else
+			LogMessage("Unexpected response");
+	}
+
+Make sure to start a timer to call CheckResponses periodically,
+this function will eventually call your callback when your query has been processed.
+
+
+
+Installation
+==============
+Copy the contents of the archive in the srcds/orangebox folder.
+Now download Langeh's SOAP TF2DM and also install the soap_tournament plugin that's included with it.
+Put the following text in the tf/cfg/sourcemod/soap_live.cfg file:
+
+sm plugins unload soap_tf2dm
+sm_lh_deactivate
+sm_cr_delay_class_switch 1
+sm_tr_delay_team_switch 0
+sv_alltalk 0
+
+and the following in the tf/cfg/sourcemod/soap_notlive.cfg file:
+
+sm plugins load soap_tf2dm
+sm_lh_activate
+sm_cr_delay_class_switch 0
+sm_tr_delay_team_switch 0
+sv_alltalk 1
+
+Installation is complete.
+
+

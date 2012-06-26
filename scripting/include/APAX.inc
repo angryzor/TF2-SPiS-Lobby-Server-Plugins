@@ -6,9 +6,9 @@
 
 #include <core>
 
-functag public APAX_Callback(const responseCode, String:responseBody[], userData);
+functag public APAX_Callback(responseCode, String:responseBody[], userData);
 
-native bool:APAX_Query(String:url[], const httpMethod, String:requestBody[], String:contentType[], APAX_Callback:onComplete, userData=0);
+native bool:APAX_Query(String:url[], httpMethod, String:requestBody[], String:contentType[], APAX_Callback:onComplete, userData=0);
 native bool:APAX_CheckResponses();
 
 

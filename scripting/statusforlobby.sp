@@ -24,6 +24,7 @@
 #include <tf2>
 #include <tf2_stocks>
 #include <adminmenu>
+#include <regex>
 
 #define PLUGIN_VERSION "0.1"
 
@@ -73,8 +74,22 @@ public Action:Command_Status(client, args)
 	GetConVarString(cvIp,ip,sizeof(ip));
 	GetConVarString(cvPort,port,sizeof(port));
 	GetCurrentMap(map,sizeof(map));
+
+/*	new String:versionStr[300];
+	new String:protV[10];
+	new String:exeV[10];
+	new String:buildV[10];
+	ServerCommandEx(versionStr,sizeof(versionStr),"version");
+	new Handle:regex = CompileRegex("Protocol version.*(\\d+).*Exe version.*(\\d+).*Exe build.*\\((\\d+)\\).*\\((\\d+)\\)",PCRE_UNGREEDY);
+	MatchRegex(regex,versionStr);
+	GetRegexSubString(regex,0,protV,sizeof(protV));
+	GetRegexSubString(regex,1,exeV,sizeof(exeV));
+	GetRegexSubString(regex,2,buildV,sizeof(buildV));
+	CloseHandle(regex);*/
+
+
 	ReplyToCommand(client,"hostname: %s",hostname);
-	ReplyToCommand(client,"version : 1.1.9.6/21 4833 secure");
+	ReplyToCommand(client,"version : 1.2.1.4/21 4961 secure");
 	ReplyToCommand(client,"udp/ip  : %s:%s",ip,port);
 	ReplyToCommand(client,"map     : %s at: 0 x, 0 y, 0 z",map);
 	ReplyToCommand(client,"players : %d (%d max)",GetRealClientCount(),MaxClients);

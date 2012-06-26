@@ -62,14 +62,9 @@ LobbyHelper_Extension g_LobbyHelper;
 
 SMEXT_LINK(&g_LobbyHelper);
 
-bool LobbyHelper_Extension::SDK_OnLoad(char *error, size_t maxlength, bool late)
+void load_cache()
 {
 	char path[PLATFORM_MAX_PATH];
-
-	curl_global_init(CURL_GLOBAL_ALL);
-
-	g_pShareSys->AddNatives(myself, lobbyhelper_natives);
-	g_pShareSys->RegisterLibrary(myself, "LobbyHelper");
 
 	g_pSM->BuildPath(Path_SM, path, sizeof(path), "configs/lobbyhelper/lobbyidcache.txt");
 	ifstream ifs(path);
@@ -79,7 +74,7 @@ bool LobbyHelper_Extension::SDK_OnLoad(char *error, size_t maxlength, bool late)
 		Json::Reader reader;
 
 		if(!reader.parse(ifs, root))
-			return true;
+			return;
 
 		for(Json::Value::ArrayIndex i = 0; i < root.size(); i++)
 		{
@@ -89,24 +84,17 @@ bool LobbyHelper_Extension::SDK_OnLoad(char *error, size_t maxlength, bool late)
 			s.steamId = el["steamId"].asInt();
 			s.name = el["name"].asString();
 			s.uId = el["uid"].asInt();
+			s.kad = el["kad"].asFloat();
 			sids[el["uid"].asInt()] = s;
 		}
 
 		ifs.close();
 	}
-
-	return true;
 }
 
-void LobbyHelper_Extension::SDK_OnUnload()
+void save_cache()
 {
 	char path[PLATFORM_MAX_PATH];
-
-	if(thr_upd)
-	{
-		thr_upd->join();
-		delete thr_upd;
-	}
 
 	g_pSM->BuildPath(Path_SM, path, sizeof(path), "configs/lobbyhelper/lobbyidcache.txt");
 	ofstream ofs(path, ios::trunc);
@@ -121,12 +109,36 @@ void LobbyHelper_Extension::SDK_OnUnload()
 			obj["srvId"] = Json::Value(i->second.srvId);
 			obj["steamId"] = Json::Value(i->second.steamId);
 			obj["name"] = Json::Value(i->second.name);
+			obj["kad"] = Json::Value(i->second.kad);
 			root.append(obj);
 		}
 
 		ofs << root;
 		ofs.close();
 	}
+}
+
+bool LobbyHelper_Extension::SDK_OnLoad(char *error, size_t maxlength, bool late)
+{
+	curl_global_init(CURL_GLOBAL_ALL);
+
+	g_pShareSys->AddNatives(myself, lobbyhelper_natives);
+	g_pShareSys->RegisterLibrary(myself, "LobbyHelper");
+
+	load_cache();
+
+	return true;
+}
+
+void LobbyHelper_Extension::SDK_OnUnload()
+{
+	if(thr_upd)
+	{
+		thr_upd->join();
+		delete thr_upd;
+	}
+
+	save_cache();
 
 	curl_global_cleanup();
 }
@@ -188,7 +200,7 @@ void download_profile(int id)
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
 	curl_easy_setopt(curl, CURLOPT_URL, oss.str().c_str());
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &write_profile_buffer);
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 20);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30);
 	res = curl_easy_perform(curl);
 	curl_easy_cleanup(curl);
 
@@ -213,11 +225,32 @@ void add_steamid(int id)
 
 	steamid sid;
 	sid.uId = id;
-	sid.srvId = friendid % 2;
-	friendid -= sid.srvId;
-	friendid -= 76561197960265728LL;
-	sid.steamId = friendid / 2;
+	sid.srvId = friendid & 1;
+	friendid &= 0xFFFFFFFF;
+	sid.steamId = friendid >> 1;
 	sid.name = find_and_extract(prf, "<title>TF2Lobby - Profile - ", "</title>");
+
+	if(prf.find(",\"kills\":") != string::npos)
+	{
+		string mykills(find_and_extract(prf, ",\"kills\":", ","));
+		string mydeaths(find_and_extract(prf, ",\"deaths\":", ","));
+		string myassists(find_and_extract(prf, ",\"assists\":", ","));
+	
+		unsigned int kills, deaths, assists;
+		istringstream kiss(mykills);
+		if(!(kiss >> kills))
+			throw runtime_error("Wrong kills format");
+		istringstream diss(mydeaths);
+		if(!(diss >> deaths))
+			throw runtime_error("Wrong deaths format");
+		istringstream aiss(myassists);
+		if(!(aiss >> assists))
+			throw runtime_error("Wrong assists format");
+	
+		sid.kad = (((float)kills) + ((float)assists)) / ((float)deaths);
+	}
+	else
+		sid.kad = 1.0f;
 
 	{
 		boost::lock_guard<boost::mutex> lock(mtx_sids);
@@ -512,12 +545,13 @@ static cell_t enumerate_participants(IPluginContext *pCtx, const cell_t *params)
 			pCtx->StringToLocal(addr, lpids[i].name.size() + 1, lpids[i].name.c_str());
 
 
-			cell_t prms[3];
+			cell_t prms[4];
 			prms[0] = lpids[i].srvId;
 			prms[1] = lpids[i].steamId;
 			prms[2] = addr;
+			prms[3] = sp_ftoc(lpids[i].kad);
 			cell_t res;
-			enm->CallFunction(prms, 3, &res);
+			enm->CallFunction(prms, 4, &res);
 			pCtx->HeapPop(addr);
 		}
 	}

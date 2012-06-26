@@ -35,6 +35,8 @@ struct steamid
 	int srvId;
 	int steamId;
 	std::string name;
+
+	float kad;
 };
 
 struct steamid_todo

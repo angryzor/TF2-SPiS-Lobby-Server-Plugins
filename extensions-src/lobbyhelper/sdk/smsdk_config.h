@@ -38,13 +38,13 @@
  */
 
 /* Basic information exposed publicly */
-#define SMEXT_CONF_NAME			"LH"
-#define SMEXT_CONF_DESCRIPTION	"Lobby Helper Extension"
-#define SMEXT_CONF_VERSION		""
+#define SMEXT_CONF_NAME			"LobbyHelper"
+#define SMEXT_CONF_DESCRIPTION	"Useful tools for TF2Lobby lobbies"
+#define SMEXT_CONF_VERSION		"0.1.1"
 #define SMEXT_CONF_AUTHOR		"angryzor"
-#define SMEXT_CONF_URL			"http://www.angryzor.com/~rt022830"
+#define SMEXT_CONF_URL			"http://github.com/angryzor"
 #define SMEXT_CONF_LOGTAG		"LH"
-#define SMEXT_CONF_LICENSE		"ISC"
+#define SMEXT_CONF_LICENSE		"GPL"
 #define SMEXT_CONF_DATESTRING	""
 
 /** 
