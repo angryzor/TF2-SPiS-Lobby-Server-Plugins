@@ -28,13 +28,15 @@
 #include <cstdlib>
 #include <cstring>
 
-#include <boost/function.hpp>
+#include <boost/bind.hpp>
 #include <boost/thread/thread.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/condition_variable.hpp>
 
 #include <curl/curl.h>
+
+#include "curlio.h"
 
 using namespace std;
 
@@ -51,87 +53,107 @@ boost::mutex mtx_todo, mtx_state, mtx_finished;
 boost::condition_variable todo_updated;
 
 bool query_running;
+static unsigned current_thread_group_id(0);
 
 queue<pending_query> query_todo;
 queue<finished_query> query_finished;
 
-#define BUF_SIZE 500000
-char response_buffer[BUF_SIZE+1];
-size_t response_ptr, query_ptr, query_size;
-const char *query_buffer;
-
-size_t write_buffer( char *ptr, size_t size, size_t count, char* buf, size_t& bufptr)
+class ResponseChecker : public ITimedEvent
 {
-	size_t written = ((BUF_SIZE - bufptr) < (size * count) ? BUF_SIZE - bufptr : size * count);
-	memcpy(buf+bufptr,ptr,written);
-	bufptr += written;
-	buf[bufptr] = '\0';
-	return written;
-}
+public:
+	ResultType OnTimer(ITimer *pTimer, void *pData)
+	{
+		try
+		{
+			boost::lock_guard<boost::mutex> lock(mtx_finished);
+	
+			while(!query_finished.empty())
+			{
+				cell_t addr, *data;
+	
+				finished_query q = query_finished.front();
+				query_finished.pop();
+	
+				smutils->LogMessage(myself,"Processing finished query. Response code is %d.",q.response);
+				smutils->LogMessage(myself,"Data: %s",q.data.c_str());
 
-size_t write_response_buffer( char *ptr, size_t size, size_t count, void *ignore)
-{
-	return write_buffer(ptr,size,count,response_buffer,response_ptr);
-}
+				IPluginContext* pCtx = q.func->GetParentRuntime()->GetDefaultContext();
+				if(pCtx->HeapAlloc(q.data.size() + 1, &addr, &data) != SP_ERROR_NONE)
+					throw runtime_error("Data too large for the heap of your plugin. Use ./spcomp -S<memsize> to compile with a bigger heap.");
+				pCtx->StringToLocal(addr, q.data.size() + 1, q.data.c_str());
+				
+				cell_t prms[3];
+				prms[0] = q.response;
+				prms[1] = addr;
+				prms[2] = q.user_data;
+				cell_t res;
+	
+				q.func->CallFunction(prms, 3, &res);
+				pCtx->HeapPop(addr);
+			}
+		}
+		catch(runtime_error& e)
+		{
+			smutils->LogMessage(myself,"Runtime error during in CheckResponses: %s",e.what());
+		}
+		catch(exception& e)
+		{
+			smutils->LogMessage(myself,"Error during in CheckResponses: %s",e.what());
+		}
+		return Pl_Handled;
+	}
 
-size_t read_buffer( char *ptr, size_t size, size_t count, const char* buf, size_t& bufptr, size_t buf_size)
-{
-	size_t read = ((buf_size - bufptr) < (size * count) ? buf_size - bufptr : size * count);
-	memcpy(ptr,buf+bufptr,read);
-	bufptr += read;
-	return read;
-}
+	void OnTimerEnd(ITimer *pTimer, void *pData)
+	{
+	}
+};
 
-size_t read_query_buffer( char *ptr, size_t size, size_t count, void *ignore)
-{
-	return read_buffer(ptr,size,count,query_buffer,query_ptr,query_size);
-}
+ResponseChecker rchecker;
 
 void perform_query(pending_query& query)
 {
 	CURL *curl;
 	CURLcode res;
 
-	g_pSM->LogMessage(myself,"Starting query...");
+	smutils->LogMessage(myself,"Starting query...");
 
 	curl = curl_easy_init();
 	if(!curl)
 		throw runtime_error("Could not execute query: can't init libcurl");
 
-	response_ptr = 0;
-	query_ptr = 0;
-	query_buffer = query.data.c_str();
-	query_size = query.data.size();
+	curl_write_buffer responseBody;
+	curl_read_buffer queryBody(query.data.c_str(),query.data.size());
 
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
 	curl_easy_setopt(curl, CURLOPT_URL, query.url.c_str());
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &write_response_buffer);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &write_buffer);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseBody);
 
+	bool sendingData(true);
 	switch(query.method)
 	{
 		case HTTPM_PUT:
 			curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
-			curl_easy_setopt(curl, CURLOPT_READFUNCTION, &read_query_buffer);
-			//curl_easy_setopt(curl, CURLOPT_READDATA, query_buffer);
-			curl_easy_setopt(curl, CURLOPT_INFILESIZE, query_size);
 			break;
 		case HTTPM_POST:
 			curl_easy_setopt(curl, CURLOPT_POST, 1);
-			curl_easy_setopt(curl, CURLOPT_READFUNCTION, &read_query_buffer);
-			//curl_easy_setopt(curl, CURLOPT_READDATA, query_buffer);
-			curl_easy_setopt(curl, CURLOPT_INFILESIZE, query_size);
 			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, NULL);
-			curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, query_size);
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, queryBody.buf_size);
 			break;
 		default:
+			sendingData = false;
 			break;
 	}
 
 	string cthead = string("Content-Type: ")+query.content_type;
 	curl_slist *slist = NULL;
 	
-	if(query.method == HTTPM_PUT || query.method == HTTPM_POST)
+	if(sendingData)
 	{
+		curl_easy_setopt(curl, CURLOPT_READFUNCTION, &read_buffer);
+		curl_easy_setopt(curl, CURLOPT_READDATA, &queryBody);
+		curl_easy_setopt(curl, CURLOPT_INFILESIZE, queryBody.buf_size);
+
 		slist = curl_slist_append(slist,cthead.c_str());
 		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
 	}
@@ -139,7 +161,7 @@ void perform_query(pending_query& query)
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30);
 	res = curl_easy_perform(curl);
 
-	if(query.method == HTTPM_PUT || query.method == HTTPM_POST)
+	if(sendingData)
 		curl_slist_free_all(slist);
 	
 	int response;
@@ -148,7 +170,7 @@ void perform_query(pending_query& query)
 
 	finished_query q;
 	q.response = response;
-	q.data = string(response_buffer);
+	q.data = string(responseBody.buffer);
 	q.func = query.func;
 	q.user_data = query.user_data;
 
@@ -157,7 +179,7 @@ void perform_query(pending_query& query)
 		query_finished.push(q);
 	}
 
-	g_pSM->LogMessage(myself,"Query finished.");
+	smutils->LogMessage(myself,"Query finished.");
 	
 	if(res != CURLE_OK) {
 		ostringstream oss;
@@ -166,10 +188,10 @@ void perform_query(pending_query& query)
 	}
 }
 
-void query_thread()
+void query_thread(unsigned int tgid)
 {
 	boost::unique_lock<boost::mutex> lock_state(mtx_state);
-	while(query_running)
+	while(tgid == current_thread_group_id)
 	{
 		try
 		{
@@ -182,7 +204,7 @@ void query_thread()
 
 				lock.unlock();
 
-				g_pSM->LogMessage(myself,"Processing query for %s, method %d.",query.url.c_str(),(int)query.method);
+				smutils->LogMessage(myself,"Processing query for %s, method %d.",query.url.c_str(),(int)query.method);
 
 				try // Add another try. We don't want to be thrown past our lock
 				{
@@ -190,11 +212,11 @@ void query_thread()
 				}
 				catch(runtime_error& e)
 				{
-					g_pSM->LogMessage(myself,"Runtime error during indexing: %s",e.what());
+					smutils->LogMessage(myself,"Runtime error during indexing: %s",e.what());
 				}
 				catch(exception& e)
 				{
-					g_pSM->LogMessage(myself,"Error during indexing: %s",e.what());
+					smutils->LogMessage(myself,"Error during indexing: %s",e.what());
 				}
 
 				lock_state.lock();
@@ -207,11 +229,11 @@ void query_thread()
 		}
 		catch(runtime_error& e)
 		{
-			g_pSM->LogMessage(myself,"Runtime error during indexing: %s",e.what());
+			smutils->LogMessage(myself,"Runtime error during indexing: %s",e.what());
 		}
 		catch(exception& e)
 		{
-			g_pSM->LogMessage(myself,"Error during indexing: %s",e.what());
+			smutils->LogMessage(myself,"Error during indexing: %s",e.what());
 		}
 	}
 }
@@ -236,28 +258,34 @@ bool APAX_Extension::SDK_OnLoad(char *error, size_t maxlength, bool late)
 			boost::lock_guard<boost::mutex> lock(mtx_state);
 			query_running = true;
 		}
-		thr = new boost::thread(boost::function<void()>(&query_thread));
 		
-		g_pShareSys->AddNatives(myself, APAX_natives);
-		g_pShareSys->RegisterLibrary(myself, "APAX");
+		thr = new boost::thread(boost::bind(query_thread,current_thread_group_id));
+		
+		sharesys->AddNatives(myself, APAX_natives);
+		sharesys->RegisterLibrary(myself, "APAX");
+
+		resp_check_timer = timersys->CreateTimer(&rchecker,0.5f,NULL,TIMER_FLAG_REPEAT);
 
 		return true;
 	}
 	catch(runtime_error& e)
 	{
-		g_pSM->LogMessage(myself,"Runtime error during startup: %s",e.what());
+		smutils->LogMessage(myself,"Runtime error during startup: %s",e.what());
 		return false;
 	}
 }
 
 void APAX_Extension::SDK_OnUnload()
 {
+	timersys->KillTimer(resp_check_timer);
+
 	{
 		boost::lock_guard<boost::mutex> lock(mtx_state);
 		query_running = false;
+		current_thread_group_id++;
 	}
+
 	todo_updated.notify_all();
-	thr->join();
 	delete thr;
 
 	curl_global_cleanup();
@@ -275,7 +303,7 @@ static cell_t APAX_Query(IPluginContext *pCtx, const cell_t *params)
 		pCtx->LocalToString(params[4], &cttype);
 		IPluginFunction* func = pCtx->GetFunctionById(static_cast<funcid_t>(params[5]));
 
-		g_pSM->LogMessage(myself,"Adding query for %s, method %d to queue.",url,params[2]);
+		smutils->LogMessage(myself,"Adding query for %s, method %d to queue.",url,params[2]);
 
 		q.url = string(url);
 		q.data = string(data);
@@ -292,54 +320,11 @@ static cell_t APAX_Query(IPluginContext *pCtx, const cell_t *params)
 	}
 	catch(runtime_error& e)
 	{
-		g_pSM->LogMessage(myself,"Runtime error in APAX_Query: %s",e.what());
+		smutils->LogMessage(myself,"Runtime error in APAX_Query: %s",e.what());
 	}
 	catch(exception& e)
 	{
-		g_pSM->LogMessage(myself,"Error during in APAX_Query: %s",e.what());
-	}
-
-	return 1;
-}
-
-static cell_t APAX_CheckResponses(IPluginContext *pCtx, const cell_t *params)
-{
-	try
-	{
-		boost::lock_guard<boost::mutex> lock(mtx_finished);
-
-		while(!query_finished.empty())
-		{
-			cell_t addr, *data;
-
-
-			finished_query q = query_finished.front();
-			query_finished.pop();
-
-			g_pSM->LogMessage(myself,"Processing finished query. Response code is %d.",q.response);
-		
-			g_pSM->LogMessage(myself,"Data: %s",q.data.c_str());
-			if(pCtx->HeapAlloc(q.data.size() + 1, &addr, &data) != SP_ERROR_NONE)
-				throw runtime_error("Data too large for stupid SourceMod's stupid stack.");
-			pCtx->StringToLocal(addr, q.data.size() + 1, q.data.c_str());
-			
-			cell_t prms[3];
-			prms[0] = q.response;
-			prms[1] = addr;
-			prms[2] = q.user_data;
-			cell_t res;
-
-			q.func->CallFunction(prms, 3, &res);
-			pCtx->HeapPop(addr);
-		}
-	}
-	catch(runtime_error& e)
-	{
-		g_pSM->LogMessage(myself,"Runtime error during in APAX_CheckResponses: %s",e.what());
-	}
-	catch(exception& e)
-	{
-		g_pSM->LogMessage(myself,"Error during in APAX_CheckResponses: %s",e.what());
+		smutils->LogMessage(myself,"Error during in APAX_Query: %s",e.what());
 	}
 
 	return 1;
@@ -348,7 +333,6 @@ static cell_t APAX_CheckResponses(IPluginContext *pCtx, const cell_t *params)
 const sp_nativeinfo_t APAX_natives[] = 
 {
 	{"APAX_Query",			APAX_Query},
-	{"APAX_CheckResponses",	APAX_CheckResponses},
 	{NULL,					NULL},
 };
 

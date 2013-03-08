@@ -48,12 +48,10 @@ boost::condition_variable todo_updated;
 sids_map sids;
 std::queue<steamid_todo> sids_todo;
 bool lookup_running;
+static unsigned current_thread_group_id(0);
 
 #define BUF_SIZE 500000
-char api_buffer[BUF_SIZE];
-char profile_buffer[BUF_SIZE];
-size_t api_ptr, profile_ptr;
-
+string api_data;
 /**
  * @file extension.cpp
  * @brief Implement extension code here.
@@ -61,6 +59,33 @@ size_t api_ptr, profile_ptr;
 LobbyHelper_Extension g_LobbyHelper;
 
 SMEXT_LINK(&g_LobbyHelper);
+
+void lookup_thread(unsigned int tgid);
+
+class lookup_thread_starter
+{
+	unsigned int thread_group_id;
+
+public:
+
+	lookup_thread_starter(unsigned int tgid) : thread_group_id(tgid)
+	{
+	}
+
+	void operator()()
+	{
+		lookup_thread(thread_group_id);
+	}
+};
+
+struct curl_write_buffer
+{
+	curl_write_buffer() : ptr(0)
+	{}
+
+	char buffer[BUF_SIZE];
+	size_t ptr;
+};
 
 void load_cache()
 {
@@ -153,25 +178,16 @@ const char *LobbyHelper_Extension::GetExtensionDateString()
 	return SM_BUILD_TIMESTAMP;
 }
 
-
-
-size_t write_buffer( char *ptr, size_t size, size_t count, char* buf, size_t& bufptr)
+size_t write_buffer( char *ptr, size_t size, size_t count, void* ctx)
 {
-	size_t written = ((BUF_SIZE - bufptr) < (size * count) ? BUF_SIZE - bufptr : size * count);
-	memcpy(buf+bufptr,ptr,written);
-	bufptr += written;
-	buf[bufptr] = '\0';
+	curl_write_buffer* dctx = (curl_write_buffer*)ctx;
+
+	size_t written = ((BUF_SIZE - dctx->ptr) < (size * count) ? BUF_SIZE - dctx->ptr : size * count);
+	memcpy(dctx->buffer + dctx->ptr,ptr,written);
+	dctx->ptr += written;
+	dctx->buffer[dctx->ptr] = '\0';
+
 	return written;
-}
-
-size_t write_api_buffer( char *ptr, size_t size, size_t count, void *ignore)
-{
-	return write_buffer(ptr,size,count,api_buffer,api_ptr);
-}
-
-size_t write_profile_buffer( char *ptr, size_t size, size_t count, void *ignore)
-{
-	return write_buffer(ptr,size,count,profile_buffer,profile_ptr);
 }
 
 string find_and_extract(const string& source, const string& before, const string& after)
@@ -185,21 +201,23 @@ string find_and_extract(const string& source, const string& before, const string
 	return source.substr(i+before.size(),j-(i+before.size()));
 }
 
-void download_profile(int id)
+string download_profile(int id)
 {
 	CURL *curl;
 	CURLcode res;
+	
+	curl_write_buffer dctx;
 
 	curl = curl_easy_init();
 	if(!curl)
 		throw runtime_error("Could not fetch profile: can't init libcurl");
 
-	profile_ptr = 0;
 	ostringstream oss;
 	oss << "http://tf2lobby.com/profile?id=" << id;
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
 	curl_easy_setopt(curl, CURLOPT_URL, oss.str().c_str());
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &write_profile_buffer);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &write_buffer);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dctx);
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30);
 	res = curl_easy_perform(curl);
 	curl_easy_cleanup(curl);
@@ -209,13 +227,13 @@ void download_profile(int id)
 		oss << "Could not fetch profile: can't perform query, error code: " << res;
 		throw runtime_error(oss.str());
 	}
+
+	return string(dctx.buffer);
 }
 
 void add_steamid(int id)
 {
-	download_profile(id);
-
-	string prf(profile_buffer);
+	string prf(download_profile(id));
 
 	string myfriendid(find_and_extract(prf, "<a href=\"http://tf2stats.net/player_stats/", "\""));
 	istringstream iss(myfriendid);
@@ -264,7 +282,7 @@ void json_enqueue_sids_todo()
 	Json::Value root;
 	Json::Reader reader;
 
-	if(!reader.parse(api_buffer, api_buffer+api_ptr, root))
+	if(!reader.parse(api_data, root))
 		throw runtime_error("Could not parse TF2Lobby API JSON.");
 
 	const Json::Value lobbies = root["lobbies"];
@@ -291,10 +309,10 @@ void json_enqueue_sids_todo()
 	todo_updated.notify_all();
 }
 
-void lookup_thread()
+void lookup_thread(unsigned int tgid)
 {
 	boost::unique_lock<boost::mutex> lock_state(mtx_state);
-	while(lookup_running)
+	while(tgid == current_thread_group_id)
 	{
 		try
 		{
@@ -359,7 +377,7 @@ vector<steamid> json_get_participating_sids(int lobbyid)
 
 	vector<steamid> res;
 
-	if(!reader.parse(api_buffer,api_buffer+api_ptr, root))
+	if(!reader.parse(api_data, root))
 		throw runtime_error("Could not parse TF2Lobby API JSON.");
 
 	const Json::Value lobbies = root["lobbies"];
@@ -406,12 +424,14 @@ void get_api_json_file()
 	
 //	g_pSM->LogMessage(myself,"Getting API file");
 
-	api_ptr = 0;
+	curl_write_buffer dctx;
+
 	ostringstream oss;
 	oss << "http://tf2lobby.com/api/lobbies";
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
 	curl_easy_setopt(curl, CURLOPT_URL, oss.str().c_str());
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_api_buffer);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_buffer);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dctx);
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5);
 	res = curl_easy_perform(curl);
 	curl_easy_cleanup(curl);
@@ -420,6 +440,8 @@ void get_api_json_file()
 
 	if(res != CURLE_OK)
 		throw runtime_error("Could not fetch API json file: can't perform query");
+
+	api_data = string(dctx.buffer);
 }
 
 void update_lobby_participants(int id)
@@ -462,7 +484,8 @@ static cell_t start_indexing_steamids(IPluginContext *pCtx, const cell_t *params
 
 			lookup_running = true;
 		}
-		thr = new boost::thread(boost::function<void()>(&lookup_thread));
+//		thr = new boost::thread(boost::function<void()>(&lookup_thread));
+		thr = new boost::thread(lookup_thread_starter(current_thread_group_id));
 	}
 	catch(runtime_error& e)
 	{
@@ -487,10 +510,10 @@ static cell_t stop_indexing_steamids(IPluginContext *pCtx, const cell_t *params)
 				return 1;
 
 			lookup_running = false;
+			current_thread_group_id++;
 		}
 		// Wake the thread up in case it was sleeping
 		todo_updated.notify_all();
-		thr->join();
 		delete thr;
 	}
 	catch(runtime_error& e)

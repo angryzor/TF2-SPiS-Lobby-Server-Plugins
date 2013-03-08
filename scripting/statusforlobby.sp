@@ -23,8 +23,6 @@
 #include <sourcemod>
 #include <tf2>
 #include <tf2_stocks>
-#include <adminmenu>
-#include <regex>
 
 #define PLUGIN_VERSION "0.1"
 
@@ -89,7 +87,7 @@ public Action:Command_Status(client, args)
 
 
 	ReplyToCommand(client,"hostname: %s",hostname);
-	ReplyToCommand(client,"version : 1.2.1.4/21 4961 secure");
+	ReplyToCommand(client,"version : 1.2.5.8/24 5231 secure");
 	ReplyToCommand(client,"udp/ip  : %s:%s",ip,port);
 	ReplyToCommand(client,"map     : %s at: 0 x, 0 y, 0 z",map);
 	ReplyToCommand(client,"players : %d (%d max)",GetRealClientCount(),MaxClients);

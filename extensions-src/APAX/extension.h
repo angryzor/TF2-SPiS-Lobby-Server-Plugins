@@ -132,6 +132,7 @@ public:
 	//virtual bool SDK_OnMetamodPauseChange(bool paused, char *error, size_t maxlength);
 #endif
 private:
+	ITimer* resp_check_timer;
 };
 
 extern const sp_nativeinfo_t APAX_natives[];

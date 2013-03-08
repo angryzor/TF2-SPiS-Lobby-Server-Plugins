@@ -18,7 +18,7 @@ PROJECT = APAX
 #Uncomment for Metamod: Source enabled extension
 #USEMETA = true
 
-OBJECTS = sdk/smsdk_ext.cpp extension.cpp 
+OBJECTS = sdk/smsdk_ext.cpp extension.cpp curlio.cpp
 
 ##############################################
 ### CONFIGURE ANY OTHER FLAGS/OPTIONS HERE ###
