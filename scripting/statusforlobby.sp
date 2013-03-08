@@ -21,8 +21,6 @@
 
 
 #include <sourcemod>
-#include <tf2>
-#include <tf2_stocks>
 
 #define PLUGIN_VERSION "0.1"
 
